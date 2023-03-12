@@ -1,0 +1,65 @@
+import org.bukkit.BanList;
+import org.bukkit.ChatColor;
+import org.bukkit.GameMode;
+import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.plugin.java.JavaPlugin;
+
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
+
+public class AntiCheatPlugin extends JavaPlugin implements Listener {
+
+private static final int CLICK_THRESHOLD = 10; // Maximum clicks allowed in a second
+private static final int WARNING_THRESHOLD = 5; // Number of warnings before player is punished
+private static final int PUNISHMENT_TICKS = 20 * 60 * 5; // Length of punishment (in ticks)
+
+private Map<UUID, Integer> clickCount = new HashMap<>();
+private Map<UUID, Integer> warningCount = new HashMap<>();
+private Map<UUID, Integer> punishmentCount = new HashMap<>();
+
+@Override
+public void onEnable() {
+    getServer().getPluginManager().registerEvents(this, this);
+}
+
+@EventHandler
+public void onPlayerInteract(PlayerInteractEvent event) {
+    Player player = event.getPlayer();
+    if (player.isOp() || player.getGameMode() == GameMode.CREATIVE) {
+        return; // Ignore ops and players in creative mode
+    }
+
+    UUID playerId = player.getUniqueId();
+    int count = clickCount.getOrDefault(playerId, 0);
+    clickCount.put(playerId, count + 1);
+
+    getServer().getScheduler().runTaskLater(this, () -> {
+        // Remove click count after one second
+        clickCount.remove(playerId);
+
+        int clicks = clickCount.getOrDefault(playerId, 0);
+        if (clicks > CLICK_THRESHOLD) {
+            int warnings = warningCount.getOrDefault(playerId, 0);
+            warningCount.put(playerId, warnings + 1);
+
+            if (warnings >= WARNING_THRESHOLD) {
+                int punishments = punishmentCount.getOrDefault(playerId, 0);
+                punishmentCount.put(playerId, punishments + 1);
+
+                if (punishments == 0) {
+                    player.sendMessage(ChatColor.RED + "Auto-clicking detected. Warning " + (warnings + 1) + " of " + WARNING_THRESHOLD + ". This behavior is not allowed.");
+                } else {
+                    // Punish the player with a temporary ban
+                    player.kickPlayer(ChatColor.RED + "You have been temporarily banned for auto-clicking. Please stop using auto-clicking tools.");
+                    getServer().getBanList(BanList.Type.NAME).addBan(player.getName(), "Auto-clicking", new Date(System.currentTimeMillis() + (PUNISHMENT_TICKS * 50)), null);
+                    punishmentCount.put(playerId, 0);
+                }
+            }
+        }
+    }, 20L); // Delay task for one second
+}
